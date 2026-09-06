@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Coccinella-Labs/core/main/.github/assets/thumbnail.png" alt="core" width="100%">
+</p>
+
 # gpucomm/core
 
 ![Minimalist white cat illustration](assets/minimalist-white-cat.png)
