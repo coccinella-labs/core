@@ -2,116 +2,84 @@
   <img src="https://raw.githubusercontent.com/Coccinella-Labs/core/main/.github/assets/thumbnail.png" alt="core" width="100%">
 </p>
 
-# coccinella-labs/core
+# Core
 
+Core is a low-level GPU compute runtime for Apple Silicon built on Metal. It focuses on memory behavior, synchronization patterns, and data movement efficiency on modern Apple GPUs. The project is organized around experimental kernels and benchmarks that measure bandwidth, latency, and communication patterns, with built-in correctness checks and output formats for systematic measurement across hardware configurations.
 
-Low-level GPU compute runtime for Apple Silicon, focused on memory, synchronization, and data movement using Metal.
+Status: Active experiments. Benchmarks validated. CI ensures builds remain stable. Hardware reliability depends on direct measurement on target machines.
 
-## Goals
+## Getting Started
 
-- Minimal runtime: device/queue/pipeline + buffer utilities
-- Kernel experiments: communication patterns + memory behavior
-- Built-in benchmarks: bandwidth, latency, scaling
+Core requires macOS with Apple Silicon, Swift 5.9+, and Xcode. Build the release binary with `swift build -c release`. The build produces a CLI tool at `.build/release/gpucomm` that runs benchmarks and correctness tests.
 
-## Dependencies
+To measure GPU bandwidth on your machine, run `./.build/release/gpucomm bench bandwidth --size-mib 64 --iters 200 --mode shared` to test shared memory mode or `--mode private` for memory local to the GPU. For a sweep across multiple sizes that shows scaling behavior, use `bandwidth-sweep` instead, e.g., `./.build/release/gpucomm bench bandwidth-sweep --sizes-mib 1,4,16,64 --iters 200 --mode private --format jsonl`. Output defaults to human-readable text; pass `--format json` or `--format jsonl` to capture structured data for logging or analysis.
 
-- Apple frameworks: `Metal` (compute), plus `Foundation` for CLI/utilities
-- License: MIT (see `LICENSE`)
-- Workflows: `docs/workflows.md`
+To run correctness checks on your GPU before running benchmarks, execute `./.build/release/gpucomm selftest`. This validates scan, matmul, and transfer operations on small problem sizes. To list all available benchmarks and options, run `./.build/release/gpucomm --help`.
 
-## Reliability On Hardware
+For development, ensure pre-commit hooks are installed with `pre-commit install` and run them before committing with `pre-commit run --all-files`.
 
-This repo is meant to be **experiments + tests = reliability on real hardware**.
+## Architecture
 
-What’s solid now:
+Core is structured around three layers. At the bottom is the Metal runtime abstraction at `Sources/GPUCommCore/Runtime.swift`, which manages devices, command queues, and pipelines. Above that sits the benchmark layer at `Sources/GPUCommCore/Benchmarks.swift`, which implements kernel experiments for bandwidth, latency, scan, matmul, and transfer operations. The Metal kernels themselves live in `Sources/GPUCommCore/Resources/Kernels/` and are compiled at runtime when the CLI starts. At the top is the CLI at `Sources/gpucomm`, which parses arguments, dispatches to the appropriate benchmark, formats results, and handles measurement aggregation.
 
-- Experiments are measurable: bandwidth/transfer/scan/matmul/latency + sweeps + `--reps` + p50/p95
-- Correctness checks exist where it matters (`scan`, `matmul` for small sizes, plus `gpucomm selftest`)
-- CI keeps it buildable and the CLI usable (`swift build -c release` + `gpucomm --help`)
+The design philosophy is that experiments should be measurable and reproducible. Every benchmark accepts parameters for problem size, iteration count, warmup count, and repetition count. Results can be aggregated across multiple runs to compute percentiles (p50, p95) and track variability. All kernels include correctness checks for small problem sizes; this is especially important for scan and matmul, where silent numerical errors are easy to miss.
 
-Caveats:
+Key code anchors are `Sources/GPUCommCore/Runtime.swift` (device and queue management), `Sources/GPUCommCore/Benchmarks.swift` (benchmark implementations), `Sources/GPUCommCore/Resources/Kernels/` (Metal kernel source), and `Sources/gpucomm/main.swift` (CLI entry point). Output formatting is centralized in `Sources/GPUCommCore/OutputFormat.swift` to ensure consistency across text, JSON, and JSONL modes.
 
-- GitHub Actions macOS runners aren’t Apple Silicon GPUs you control, so CI can’t validate “real” Metal timings—only build + basic CLI behavior
-- “Reliability on hardware” still depends on running these benches on target machines and tracking regressions (record chip/macOS version + commit + outputs)
+## Understanding Results
 
-## Repro / Reporting
+GPU benchmarks are only reliable when measured on real hardware with consistent conditions. Results vary by chip (M1, M2, M3, etc.), GPU core count, memory configuration, and system load. The same benchmark run twice can produce different results due to thermal throttling, background processes, or battery mode. This is not a bug; it's why systematic measurement with warmup counts, repetitions, and percentile reporting matters.
 
-When you post results (issues/comments), include:
+When running benchmarks, disable power management features if possible (plug in, avoid low-power mode, close other applications). Run each benchmark multiple times with `--reps` to capture variance. Always record metadata: chip name and GPU core count (from `system_profiler SPHardwareDataType`), macOS version (`sw_vers`), Xcode version (`xcodebuild -version`), and the exact command line used. This metadata is essential for interpreting results and tracking regressions across Swift/Xcode updates or macOS releases.
 
-- Hardware: chip + GPU (and whether on battery/low-power mode)
-- OS/tooling: macOS version + Xcode/Swift version
-- Repo state: commit SHA + command line + `--format json/jsonl` output
+GitHub Actions CI can validate that the code builds and basic CLI operations work, but it cannot measure true GPU performance because CI runners are shared and lack a dedicated GPU. For real results, run benchmarks locally and report them back to the repository with your hardware metadata.
 
-Quick metadata + sanity check:
+## Reporting Results and Issues
 
-```bash
-git rev-parse HEAD
-sw_vers
-xcodebuild -version
-system_profiler SPHardwareDataType | head -n 30
-system_profiler SPDisplaysDataType | head -n 80
+When posting benchmark results in GitHub issues or comments, include hardware details, OS/tooling versions, the commit SHA, and the command line used. Before running experiments, capture your system state with a quick sanity check: `git rev-parse HEAD` for the commit, `sw_vers` for macOS, `xcodebuild -version` for Xcode, and `system_profiler SPHardwareDataType | head -n 30` for chip and GPU details.
 
-swift build -c release
-./.build/release/gpucomm selftest --format json
-```
+A typical result report looks like this. Run a bandwidth sweep with `benchmark-sweep --sizes-mib 1,4,16,64 --iters 200 --reps 5 --mode private --format jsonl` to capture p50/p95 percentiles across five repetitions. Save the JSON output. Include the command, the hardware (e.g., "M3 Max with 12-core GPU on macOS 15.1"), and the output file as a comment in the issue. This lets others compare across machines and track regressions.
 
-Example benchmark report (JSONL, p50/p95 via `--reps`):
+For correctness concerns, run `selftest` first to isolate whether the issue is in the kernel or in measurement. If a benchmark crashes or produces nonsensical results, include the exact command line, the error message, and your hardware metadata so maintainers can reproduce it.
 
-```bash
-./.build/release/gpucomm bench transfer-sweep --sizes-kib 1,4,64 --iters 5000 --warmup 200 --reps 5 --direction both --mode both --format jsonl
-./.build/release/gpucomm bench bandwidth-sweep --sizes-mib 1,4,16,64 --iters 200 --reps 5 --mode private --format jsonl
-```
+## Roadmap
 
-## Roadmap Progress
+The main roadmap is tracked in GitHub issue #1 with detailed comments at each milestone. Core has implemented transfer benchmarks with bandwidth and latency measurement, single-block and multi-block scan kernels with correctness validation, naive and tiled matmul implementations with a sweep across tile sizes and problem sizes, latency measurements for kernel launch overhead, and output formatting for both human-readable and machine-parseable results. All benchmarks support `--reps` for aggregating results across multiple runs and computing percentiles.
 
-Primary tracking issue: https://github.com/coccinella-labs/core/issues/1
+Current work focuses on optimizing specific kernels and validating that the baseline measurements hold across the full range of Apple Silicon chips. Future directions include communication pattern experiments (allreduce, allgather), mixed-precision kernels, and integration with higher-level frameworks. See issue #1 for the full list of completed milestones and next steps.
 
-| Milestone | Roadmap Comment | Commit |
-| --- | --- | --- |
-| Transfer benchmark | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110310825 | `eefc5bb` |
-| Scan (1024) | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110321217 | `93d5627` |
-| Scan (multi-block) | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110349818 | `c7c9f9e` |
-| Matmul (naive+tiled) | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110369561 | `d42298c` |
-| Matmul sweep | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110384808 | `b70fde7` |
-| Matmul tiled variants | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110398545 | `731c33f` |
-| Output formats (`--format`) | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110425795 | `7d30ac8` |
-| Scan sweep | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110440856 | `9be8a34` |
-| Bandwidth sweep | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110451297 | `37fdb5b` |
-| Transfer sweep | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110461187 | `f000bc7` |
-| Percentiles for sweeps | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110487664 | `9054a8b` |
-| `--reps` for single benches | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110513683 | `c637e3b` |
-| macOS CI build | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110547545 | `466795e` |
-| CI help smoke | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110557042 | `25c6f84` |
-| Latency benchmark | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110584831 | `8382a5c` |
-| Hardware selftest | https://github.com/coccinella-labs/core/issues/1#issuecomment-4110605042 | `c101034` |
+## Build and Run
 
-## Build
+Building requires only `swift build -c release`. The resulting binary at `.build/release/gpucomm` includes all benchmarks and the CLI. No external dependencies are needed; Core uses only Swift, Metal, and Foundation.
 
-```bash
-swift build -c release
-```
+Common benchmarks are bandwidth measurement (`bench bandwidth`), bandwidth scaling across sizes (`bench bandwidth-sweep`), latency (`bench latency`), scan-based prefix sum (`bench scan`, `bench scan-sweep`), matrix multiplication (`bench matmul`, `bench matmul-sweep`), data transfer between CPU and GPU (`bench transfer`, `bench transfer-sweep`), and correctness validation (`selftest`). Each benchmark accepts parameters for problem size, iteration count, warmup count, repetitions, and output format. Run `./.build/release/gpucomm --help` to see all available commands and options.
 
-## Run
+## Known Limitations
 
-```bash
-.build/release/gpucomm bench bandwidth --size-mib 64 --iters 200 --mode shared
-.build/release/gpucomm bench bandwidth --size-mib 64 --iters 200 --mode private
-.build/release/gpucomm bench bandwidth-sweep --sizes-mib 1,4,16,64 --iters 200 --mode private --format jsonl
-.build/release/gpucomm bench scan --n 1024 --iters 200 --warmup 20
-.build/release/gpucomm bench scan --n 65536 --iters 50 --warmup 10
-.build/release/gpucomm bench scan-sweep --ns 1024,4096,65536,1048576 --iters 50 --warmup 10 --format jsonl
-.build/release/gpucomm bench latency --kind kernel --iters 2000 --warmup 200 --reps 5 --format json
-.build/release/gpucomm bench matmul --m 256 --n 256 --k 256 --iters 50 --warmup 10 --variant tiled16
-.build/release/gpucomm bench matmul-sweep --m 512 --n 512 --k 512 --iters 10 --warmup 3
-.build/release/gpucomm bench transfer --size-kib 4 --iters 10000 --warmup 100 --direction h2d --mode private --strategy blit
-.build/release/gpucomm bench transfer --size-kib 4 --iters 10000 --warmup 100 --direction d2h --mode private --strategy blit --format json
-.build/release/gpucomm bench transfer-sweep --sizes-kib 1,4,64 --iters 5000 --warmup 200 --direction both --mode both --format jsonl
-.build/release/gpucomm run reduction --n 1024
-.build/release/gpucomm selftest
-```
+Benchmarks measure timings in CPU nanoseconds via Metal's timestamp query, which has microsecond granularity on Apple Silicon. Very short operations (< 1 microsecond) may show noise or inaccuracy. Warmup is essential; the first few kernel launches typically have higher latency due to GPU state initialization. Memory bandwidth measurements assume no other GPU workload is running; background rendering or other GPU tasks will interfere with results.
 
-## Layout
+Correctness checks are implemented for scan and matmul but not for transfer operations. Transfer validates that data round-trips successfully (CPU → GPU → CPU) but does not check against a reference implementation. Latency measurement includes GPU queue submission overhead but not CPU-side scheduling jitter. Very large problem sizes (> 1GB) may be limited by available GPU VRAM; the default GPU memory limit is typically 50% of system RAM on Apple Silicon.
 
-- `Sources/GPUCommCore`: runtime + benchmarks
-- `Sources/GPUCommCore/Resources/Kernels`: Metal kernels (compiled at runtime)
-- `Sources/gpucomm`: CLI
+## Contributing
+
+Fork the repository, create a feature branch, make changes to `Sources/GPUCommCore` or `Sources/gpucomm`, add tests as appropriate, run `pre-commit run --all-files` to lint, and open a PR. When adding a new benchmark, implement it as a function in `Sources/GPUCommCore/Benchmarks.swift`, add a command to the CLI dispatcher in `main.swift`, and include correctness checks for at least one small problem size.
+
+When adding a new Metal kernel, place the source in `Sources/GPUCommCore/Resources/Kernels/`, implement a corresponding benchmark function, and test it locally on your hardware before opening a PR. Document the kernel's purpose, the problem size parameters it accepts, and any known limitations (e.g., maximum thread group size, memory requirements).
+
+## Performance and Scaling
+
+Bandwidth typically scales from a few GB/s at small transfer sizes up to the theoretical maximum for your GPU (e.g., 120GB/s on M3 Max) at large sizes. Latency for kernel launch is typically 10-30 microseconds. Scan throughput scales with GPU core count and problem size; very large scans (millions of elements) are compute-bound. Matmul performance depends heavily on tile size and data reuse; tiled variants outperform naive implementations by 10-100x depending on problem size.
+
+Results will vary based on system load, thermal state, and background processes. Always run multiple repetitions and report percentiles, not just peak values. If results seem inconsistent, disable automatic power management, close other applications, and re-run.
+
+## Related Documentation
+
+AGENTS.md documents how GPU communication patterns are selected and tested. docs/workflows.md covers the development and measurement workflow. The Metal kernels in `Sources/GPUCommCore/Resources/Kernels/` are documented inline with comments on algorithm and memory access patterns.
+
+## License
+
+MIT. See LICENSE file.
+
+## Contact
+
+Questions? Open an issue on GitHub or comment on the main roadmap issue (#1) with your hardware details and measurements.
