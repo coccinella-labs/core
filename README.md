@@ -20,11 +20,11 @@ For development, ensure pre-commit hooks are installed with `pre-commit install`
 
 ## Architecture
 
-Core is structured around three layers. At the bottom is the Metal runtime abstraction at `Sources/GPUCommCore/Runtime.swift`, which manages devices, command queues, and pipelines. Above that sits the benchmark layer at `Sources/GPUCommCore/Benchmarks.swift`, which implements kernel experiments for bandwidth, latency, scan, matmul, and transfer operations. The Metal kernels themselves live in `Sources/GPUCommCore/Resources/Kernels/` and are compiled at runtime when the CLI starts. At the top is the CLI at `Sources/gpucomm`, which parses arguments, dispatches to the appropriate benchmark, formats results, and handles measurement aggregation.
+Core is structured around three layers. At the bottom is the Metal runtime abstraction split across `Sources/GPUCommCore/MetalContext.swift`, which manages devices, command queues, and pipelines, and `Sources/GPUCommCore/KernelLibrary.swift`, which compiles kernels at startup. Above that sits the benchmark layer at `Sources/GPUCommCore/Benchmarks/`, with one file per experiment covering bandwidth, latency, scan, matmul, transfer, and reduction operations. The Metal kernels themselves live in `Sources/GPUCommCore/Resources/Kernels/` and are compiled at runtime when the CLI starts. At the top is the CLI at `Sources/gpucomm`, which parses arguments, dispatches to the appropriate benchmark, formats results, and handles measurement aggregation.
 
 The design philosophy is that experiments should be measurable and reproducible. Every benchmark accepts parameters for problem size, iteration count, warmup count, and repetition count. Results can be aggregated across multiple runs to compute percentiles (p50, p95) and track variability. All kernels include correctness checks for small problem sizes; this is especially important for scan and matmul, where silent numerical errors are easy to miss.
 
-Key code anchors are `Sources/GPUCommCore/Runtime.swift` (device and queue management), `Sources/GPUCommCore/Benchmarks.swift` (benchmark implementations), `Sources/GPUCommCore/Resources/Kernels/` (Metal kernel source), and `Sources/gpucomm/main.swift` (CLI entry point). Output formatting is centralized in `Sources/GPUCommCore/OutputFormat.swift` to ensure consistency across text, JSON, and JSONL modes.
+Key code anchors are `Sources/GPUCommCore/MetalContext.swift` (device and queue management), `Sources/GPUCommCore/Benchmarks/` (benchmark implementations), `Sources/GPUCommCore/Resources/Kernels/` (Metal kernel source), and `Sources/gpucomm/main.swift` (CLI entry point). Output formatting is centralized in `Sources/gpucomm/Output.swift` (text, JSON, JSONL, CSV modes) with percentile aggregation in `Sources/gpucomm/Stats.swift`.
 
 ## Understanding Results
 
@@ -62,7 +62,7 @@ Correctness checks are implemented for scan and matmul but not for transfer oper
 
 ## Contributing
 
-Fork the repository, create a feature branch, make changes to `Sources/GPUCommCore` or `Sources/gpucomm`, add tests as appropriate, run `pre-commit run --all-files` to lint, and open a PR. When adding a new benchmark, implement it as a function in `Sources/GPUCommCore/Benchmarks.swift`, add a command to the CLI dispatcher in `main.swift`, and include correctness checks for at least one small problem size.
+Fork the repository, create a feature branch, make changes to `Sources/GPUCommCore` or `Sources/gpucomm`, add tests as appropriate, run `pre-commit run --all-files` to lint, and open a PR. When adding a new benchmark, implement it as a new file in `Sources/GPUCommCore/Benchmarks/`, add a command to the CLI dispatcher in `main.swift`, and include correctness checks for at least one small problem size.
 
 When adding a new Metal kernel, place the source in `Sources/GPUCommCore/Resources/Kernels/`, implement a corresponding benchmark function, and test it locally on your hardware before opening a PR. Document the kernel's purpose, the problem size parameters it accepts, and any known limitations (e.g., maximum thread group size, memory requirements).
 
