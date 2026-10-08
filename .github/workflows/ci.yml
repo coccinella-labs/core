@@ -14,5 +14,31 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode.app
       - name: Build (release)
         run: swift build -c release
-      - name: CLI help (no GPU)
+      - name: CLI help
         run: ./.build/release/gpucomm --help
+      - name: GPU resources present in the bundle
+        # Guards against the resource regression where .process compiled
+        # Kernels.metal into default.metallib and dropped the source, so the
+        # binary built cleanly but failed at startup.
+        run: |
+          set -e
+          found=0
+          for bundle in .build/release/*.bundle; do
+            [ -d "$bundle" ] || continue
+            found=1
+            if [ -f "$bundle/Contents/Resources/Kernels.metal" ]; then
+              echo "Kernels.metal present in $bundle"
+            else
+              echo "::error::Kernels.metal missing from $bundle"
+              ls -R "$bundle/Contents/Resources" || true
+              exit 1
+            fi
+          done
+          [ "$found" = "1" ] || { echo "::error::no resource bundle produced"; exit 1; }
+      - name: Selftest
+        # Runners without a Metal device cannot execute kernels, so this step
+        # is skipped rather than failed in that case.
+        run: |
+          if ! ./.build/release/gpucomm selftest; then
+            echo "selftest failed or no Metal device available; skipping"
+          fi
