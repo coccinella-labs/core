@@ -27,6 +27,14 @@ let package = Package(
                 .linkedFramework("Metal"),
             ]
         ),
+        // Documentation drift guard. Reads README.md and the CLI help text as
+        // text; it does not create a Metal device, so it runs on CI runners
+        // without a GPU.
+        .testTarget(
+            name: "GPUCommCoreTests",
+            dependencies: ["gpucomm"],
+            path: "Tests/GPUCommCoreTests"
+        ),
         .executableTarget(
             name: "gpucomm",
             dependencies: ["GPUCommCore"],

@@ -35,6 +35,10 @@ jobs:
             fi
           done
           [ "$found" = "1" ] || { echo "::error::no resource bundle produced"; exit 1; }
+      - name: Unit tests
+        # README drift guard. Reads files as text and never creates a Metal
+        # device, so it runs on GPU-less runners.
+        run: swift test
       - name: Selftest
         # Runners without a Metal device cannot execute kernels, so this step
         # is skipped rather than failed in that case.
