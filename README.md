@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Coccinella-Labs/core/main/.github/assets/thumbnail.png" alt="core" width="100%">
+  <img src="https://raw.githubusercontent.com/coccinella-labs/core/main/.github/assets/thumbnail.png" alt="core" width="100%">
 </p>
 
 # Core

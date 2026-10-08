@@ -16,7 +16,12 @@ let package = Package(
         .target(
             name: "GPUCommCore",
             resources: [
-                .process("Resources"),
+                // Copy, do not process. SwiftPM's .process compiles .metal
+                // sources into default.metallib and does not keep the source,
+                // but KernelLibrary loads Kernels.metal as text and compiles it
+                // at runtime. With .process the binary failed at startup with a
+                // missing resource error.
+                .copy("Resources/Kernels/Kernels.metal"),
             ],
             linkerSettings: [
                 .linkedFramework("Metal"),
