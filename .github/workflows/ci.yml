@@ -20,17 +20,24 @@ jobs:
         # Guards against the resource regression where .process compiled
         # Kernels.metal into default.metallib and dropped the source, so the
         # binary built cleanly but failed at startup.
+        #
+        # The resource is searched for recursively rather than at a fixed path.
+        # SwiftPM flattens it to Contents/Resources/Kernels.metal on some
+        # toolchains and preserves the subdirectory on others, so a hardcoded
+        # path fails on whichever runner disagrees. What matters is that the
+        # source is in the bundle at all.
         run: |
           set -e
           found=0
           for bundle in .build/release/*.bundle; do
             [ -d "$bundle" ] || continue
             found=1
-            if [ -f "$bundle/Contents/Resources/Kernels.metal" ]; then
+            if find "$bundle" -name Kernels.metal -print -quit | grep -q .; then
               echo "Kernels.metal present in $bundle"
+              find "$bundle" -name Kernels.metal
             else
               echo "::error::Kernels.metal missing from $bundle"
-              ls -R "$bundle/Contents/Resources" || true
+              ls -R "$bundle" || true
               exit 1
             fi
           done
